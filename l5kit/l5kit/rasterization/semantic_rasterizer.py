@@ -3,6 +3,10 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
+import operator
+from scipy import interpolate
+
+from skimage.draw import line_aa
 
 from ..data.filter import filter_tl_faces_by_status
 from ..data.map_api import MapAPI
@@ -53,13 +57,47 @@ def cv2_subpixel(coords: np.ndarray) -> np.ndarray:
     return coords
 
 
+def compute_center_lane(xy_left, xy_right):
+    if xy_left.shape[0] > xy_right.shape[0]:
+        x_lr = np.linspace(xy_right[0, 1], xy_right[-1, 1], xy_left.shape[0])
+        if xy_right.shape[0] < 4:
+            f = interpolate.interp1d(xy_right[:, 1], xy_right[:, 0], kind='linear')
+            f_y = f(x_lr)
+        else:
+            tck, u = interpolate.splprep([xy_right[:, 1], xy_right[:, 0]], s=0)
+            x_lr, f_y = interpolate.splev(np.linspace(0, 1, xy_left.shape[0]), tck)
+        xy_right = np.vstack((f_y, x_lr)).T
+
+    elif xy_left.shape[0] < xy_right.shape[0]:
+        # L = sorted(zip(xy_left[:, 1], xy_left[:, 0]), key=operator.itemgetter(0))
+        # x_s, y_s = zip(*L)
+        x_lr = np.linspace(xy_left[0, 1], xy_left[-1, 1], xy_right.shape[0])
+        if xy_left.shape[0] < 4:
+            f = interpolate.interp1d(xy_left[:, 1], xy_left[:, 0], kind='linear')
+            f_y = f(x_lr)
+        else:
+            tck, u = interpolate.splprep([xy_left[:, 1], xy_left[:, 0]], s=0)
+            x_lr, f_y = interpolate.splev(np.linspace(0, 1, xy_right.shape[0]), tck)
+        xy_left = np.vstack((f_y, x_lr)).T
+
+    center_line = (xy_left + xy_right) / 2.0
+
+    return center_line
+
+
+def hsv2rgb(x):
+    hsv = np.uint8([[x]])
+    rgb = np.array(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)[0][0])
+    return rgb
+
+
 class SemanticRasterizer(Rasterizer):
     """
     Rasteriser for the vectorised semantic map (generally loaded from json files).
     """
 
     def __init__(
-        self, render_context: RenderContext, semantic_map_path: str, world_to_ecef: np.ndarray,
+            self, render_context: RenderContext, semantic_map_path: str, world_to_ecef: np.ndarray,
     ):
         self.render_context = render_context
         self.raster_size = render_context.raster_size_px
@@ -118,11 +156,11 @@ class SemanticRasterizer(Rasterizer):
         }
 
     def rasterize(
-        self,
-        history_frames: np.ndarray,
-        history_agents: List[np.ndarray],
-        history_tl_faces: List[np.ndarray],
-        agent: Optional[np.ndarray] = None,
+            self,
+            history_frames: np.ndarray,
+            history_agents: List[np.ndarray],
+            history_tl_faces: List[np.ndarray],
+            agent: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         if agent is None:
             ego_translation_m = history_frames[0]["ego_translation"]
@@ -142,7 +180,7 @@ class SemanticRasterizer(Rasterizer):
         return sem_im.astype(np.float32) / 255
 
     def render_semantic_map(
-        self, center_in_world: np.ndarray, raster_from_world: np.ndarray, tl_faces: np.ndarray
+            self, center_in_world: np.ndarray, raster_from_world: np.ndarray, tl_faces: np.ndarray
     ) -> np.ndarray:
         """Renders the semantic map at given x,y coordinates.
 
@@ -164,14 +202,20 @@ class SemanticRasterizer(Rasterizer):
 
         # plot lanes
         lanes_lines = defaultdict(list)
+        center_lines = defaultdict(list)
 
         for idx in elements_within_bounds(center_in_world, self.bounds_info["lanes"]["bounds"], raster_radius):
             lane = self.proto_API[self.bounds_info["lanes"]["ids"][idx]].element.lane
 
             # get image coords
             lane_coords = self.proto_API.get_lane_coords(self.bounds_info["lanes"]["ids"][idx])
+
             xy_left = cv2_subpixel(transform_points(lane_coords["xyz_left"][:, :2], raster_from_world))
             xy_right = cv2_subpixel(transform_points(lane_coords["xyz_right"][:, :2], raster_from_world))
+
+            center_line = compute_center_lane(lane_coords["xyz_left"][:, :2], lane_coords["xyz_right"][:, :2])
+            center_line = cv2_subpixel(transform_points(center_line, raster_from_world))
+
             lanes_area = np.vstack((xy_left, np.flip(xy_right, 0)))  # start->end left then end->start right
 
             # Note(lberg): this called on all polygons skips some of them, don't know why
@@ -187,12 +231,35 @@ class SemanticRasterizer(Rasterizer):
                 elif self.proto_API.is_traffic_face_colour(tl_id, "yellow"):
                     lane_type = "yellow"
 
-            lanes_lines[lane_type].extend([xy_left, xy_right])
+            print(center_line.shape)
 
-        cv2.polylines(img, lanes_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
-        cv2.polylines(img, lanes_lines["green"], False, (0, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
-        cv2.polylines(img, lanes_lines["yellow"], False, (255, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
-        cv2.polylines(img, lanes_lines["red"], False, (255, 0, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+            angles = np.array([np.arccos(
+                (center_line[i + 1][1] - center_line[i][1]) / np.linalg.norm(center_line[i + 1] - center_line[i]))
+                for i in range(center_line.shape[0] - 1)])
+
+            # angles = np.insert(angles, 0, 0)
+
+            center_line_s = center_line
+
+            # for i in range(center_line.shape[0] - 1):
+            #     rr, cc, _ = line_aa(center_line_s[i][1], center_line_s[i][0], center_line_s[i + 1][1],
+            #                         center_line_s[i + 1][0])
+            #     rr, cc = rr >> 8, cc >> 8
+            #     # if all(ele >= 0 and ele < 224 for ele in np.concatenate((rr, cc))):
+            #     img[rr, cc] = hsv2rgb(np.array([int(angles[i] * 90 / np.pi), 255, 255]))
+            lanes_lines[lane_type].extend([xy_left])
+            lanes_lines[lane_type].extend([xy_right])
+            center_lines[lane_type].extend([center_line])
+
+        # cv2.polylines(img, lanes_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        # cv2.polylines(img, lanes_lines["green"], False, (0, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        # cv2.polylines(img, lanes_lines["yellow"], False, (255, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        # cv2.polylines(img, lanes_lines["red"], False, (255, 0, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, center_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, center_lines["green"], False, (0, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, center_lines["yellow"], False, (255, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, center_lines["red"], False, (255, 0, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+
 
         # plot crosswalks
         crosswalks = []
