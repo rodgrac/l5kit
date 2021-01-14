@@ -219,7 +219,8 @@ def read_pred_csv(csv_path: str) -> Iterator[dict]:
     assert fieldnames is not None, "error reading fieldnames"
 
     # exclude timestamp, track_id and MAX_MODES confs, the rest should be (x, y) * len * 3 = 6*len
-    future_len = (len(fieldnames) - (2 + MAX_MODES)) / 6
+    future_len = (len(fieldnames) - (2 + MAX_MODES)) / (MAX_MODES * 2)
+
     assert future_len == int(future_len), "error estimating len"
     future_len = int(future_len)
 

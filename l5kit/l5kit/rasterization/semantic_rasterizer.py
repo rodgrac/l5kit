@@ -231,35 +231,32 @@ class SemanticRasterizer(Rasterizer):
                 elif self.proto_API.is_traffic_face_colour(tl_id, "yellow"):
                     lane_type = "yellow"
 
-            print(center_line.shape)
-
-            angles = np.array([np.arccos(
-                (center_line[i + 1][1] - center_line[i][1]) / np.linalg.norm(center_line[i + 1] - center_line[i]))
-                for i in range(center_line.shape[0] - 1)])
-
-            # angles = np.insert(angles, 0, 0)
-
-            center_line_s = center_line
-
+            # angles = np.array([np.arccos(
+            #     (center_line[i + 1][1] - center_line[i][1]) / np.linalg.norm(center_line[i + 1] - center_line[i]).clip(min=0.0001))
+            #     for i in range(center_line.shape[0] - 1)])
+            #
+            # center_line_s = center_line >> 8
+            #
             # for i in range(center_line.shape[0] - 1):
             #     rr, cc, _ = line_aa(center_line_s[i][1], center_line_s[i][0], center_line_s[i + 1][1],
             #                         center_line_s[i + 1][0])
-            #     rr, cc = rr >> 8, cc >> 8
-            #     # if all(ele >= 0 and ele < 224 for ele in np.concatenate((rr, cc))):
-            #     img[rr, cc] = hsv2rgb(np.array([int(angles[i] * 90 / np.pi), 255, 255]))
-            lanes_lines[lane_type].extend([xy_left])
-            lanes_lines[lane_type].extend([xy_right])
+            #
+            #     if all(ele >= 0 and ele < 224 for ele in np.concatenate((rr, cc))):
+            #         img[rr, cc] = hsv2rgb(np.array([int(angles[i] * 90 / np.pi), 255, 255]))
+            # lanes_lines[lane_type].extend([xy_left])
+            # lanes_lines[lane_type].extend([xy_right])
+            lanes_lines["default"].extend([xy_left])
+            lanes_lines["default"].extend([xy_right])
             center_lines[lane_type].extend([center_line])
 
-        # cv2.polylines(img, lanes_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, lanes_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         # cv2.polylines(img, lanes_lines["green"], False, (0, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         # cv2.polylines(img, lanes_lines["yellow"], False, (255, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         # cv2.polylines(img, lanes_lines["red"], False, (255, 0, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
-        cv2.polylines(img, center_lines["default"], False, (255, 217, 82), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
+        cv2.polylines(img, center_lines["default"], False, (10, 255, 255), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         cv2.polylines(img, center_lines["green"], False, (0, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         cv2.polylines(img, center_lines["yellow"], False, (255, 255, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
         cv2.polylines(img, center_lines["red"], False, (255, 0, 0), lineType=cv2.LINE_AA, shift=CV2_SHIFT)
-
 
         # plot crosswalks
         crosswalks = []

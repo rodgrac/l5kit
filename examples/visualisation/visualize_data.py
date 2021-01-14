@@ -14,6 +14,8 @@ from collections import Counter
 from l5kit.data import PERCEPTION_LABELS
 from prettytable import PrettyTable
 
+import torch
+
 import os
 
 # set env variable for data
@@ -23,7 +25,7 @@ cfg = load_config_data("./visualisation_config.yaml")
 print(cfg)
 
 print(f'current raster_param:\n')
-for k,v in cfg["raster_params"].items():
+for k, v in cfg["raster_params"].items():
     print(f"{k}:{v}")
 
 dm = LocalDataManager()
@@ -57,36 +59,14 @@ for count, label in zip(counts, PERCEPTION_LABELS):
 print(table)
 
 rast = build_rasterizer(cfg, dm)
-dataset = EgoDataset(cfg, zarr_dataset, rast)
-
-
-data = dataset[10000]
-
-im = data["image"].transpose(1, 2, 0)
-im = dataset.rasterizer.to_rgb(im)
-target_positions_pixels = transform_points(data["target_positions"], data["raster_from_agent"])
-draw_trajectory(im, target_positions_pixels, TARGET_POINTS_COLOR, yaws=data["target_yaws"])
-
-plt.figure()
-plt.imshow(im[::-1])
-
-
-cfg["raster_params"]["map_type"] = "py_satellite"
-rast = build_rasterizer(cfg, dm)
-dataset = EgoDataset(cfg, zarr_dataset, rast)
-data = dataset[50]
-
-im = data["image"].transpose(1, 2, 0)
-im = dataset.rasterizer.to_rgb(im)
-target_positions_pixels = transform_points(data["target_positions"], data["raster_from_agent"])
-draw_trajectory(im, target_positions_pixels, TARGET_POINTS_COLOR, yaws=data["target_yaws"])
-
-plt.figure()
-plt.imshow(im[::-1])
-
 dataset = AgentDataset(cfg, zarr_dataset, rast)
 data = dataset[0]
 
+# idx = np.random.randint(0, 10000, 10)
+# for id in idx:
+#     data = dataset[idx]
+#     print(data["history_positions"])
+
 im = data["image"].transpose(1, 2, 0)
 im = dataset.rasterizer.to_rgb(im)
 target_positions_pixels = transform_points(data["target_positions"], data["raster_from_agent"])
@@ -94,6 +74,30 @@ draw_trajectory(im, target_positions_pixels, TARGET_POINTS_COLOR, yaws=data["tar
 
 plt.figure()
 plt.imshow(im[::-1])
+
+# cfg["raster_params"]["map_type"] = "py_satellite"
+# rast = build_rasterizer(cfg, dm)
+# dataset = EgoDataset(cfg, zarr_dataset, rast)
+# data = dataset[50]
+#
+# im = data["image"].transpose(1, 2, 0)
+# im = dataset.rasterizer.to_rgb(im)
+# target_positions_pixels = transform_points(data["target_positions"], data["raster_from_agent"])
+# draw_trajectory(im, target_positions_pixels, TARGET_POINTS_COLOR, yaws=data["target_yaws"])
+#
+# plt.figure()
+# plt.imshow(im[::-1])
+#
+# dataset = AgentDataset(cfg, zarr_dataset, rast)
+# data = dataset[0]
+#
+# im = data["image"].transpose(1, 2, 0)
+# im = dataset.rasterizer.to_rgb(im)
+# target_positions_pixels = transform_points(data["target_positions"], data["raster_from_agent"])
+# draw_trajectory(im, target_positions_pixels, TARGET_POINTS_COLOR, yaws=data["target_yaws"])
+#
+# plt.figure()
+# plt.imshow(im[::-1])
 
 # from IPython.display import display, clear_output
 # import PIL
